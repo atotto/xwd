@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image"
-	"image/color"
 	"io"
 )
 
@@ -89,9 +88,10 @@ func Decode(r io.Reader) (img image.Image, err error) {
 
 	m := image.NewNRGBA(image.Rect(0, 0, int(header.PixmapWidth), int(header.PixmapHeight)))
 
-	readByteN := int(header.BitsPerPixel) / 8
-	pad := make([]byte, header.PixmapWidth*(header.BitmapPad)/8)
-	buf := make([]byte, readByteN)
+	pixSize := int(header.BitsPerPixel) / 8
+	padSize := header.PixmapWidth * (header.BitmapUnit - header.BitsPerPixel) / 8
+	pad := make([]byte, padSize)
+	buf := make([]byte, pixSize)
 	for y := 0; y < int(header.PixmapHeight); y++ {
 		for x := 0; x < int(header.PixmapWidth); x++ {
 			n, err := io.ReadFull(r, buf)
@@ -102,28 +102,30 @@ func Decode(r io.Reader) (img image.Image, err error) {
 					return nil, err
 				}
 			}
-			if n != readByteN {
+			if n != pixSize {
 				return nil, fmt.Errorf("invalid read size")
 			}
-			m.Set(x, y, color.NRGBA{
-				// TODO: use mask
-				R: buf[2],
-				G: buf[1],
-				B: buf[0],
-				A: 0xFF,
-			})
+			i := m.PixOffset(x, y)
+			s := m.Pix[i : i+4 : i+4]
+			// TODO: use mask
+			s[0] = buf[2]
+			s[1] = buf[1]
+			s[2] = buf[0]
+			s[3] = 0xFF
 		}
-		// skip padding
-		n, err = io.ReadFull(r, pad)
-		if err != nil {
-			if err == io.EOF {
-				return m, nil
-			} else {
-				return nil, err
+		if padSize > 0 {
+			// skip padding
+			n, err = io.ReadFull(r, pad)
+			if err != nil {
+				if err == io.EOF {
+					return m, nil
+				} else {
+					return nil, err
+				}
 			}
-		}
-		if n != int(header.PixmapWidth) {
-			return nil, fmt.Errorf("invalid read size")
+			if n != int(header.PixmapWidth) {
+				return nil, fmt.Errorf("invalid read size")
+			}
 		}
 	}
 	return m, nil
