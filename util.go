@@ -5,7 +5,6 @@ import (
 	"context"
 	"image"
 	"io"
-	"log"
 	"os/exec"
 )
 
@@ -26,12 +25,20 @@ func DumpXWindowImage(ctx context.Context, w io.Writer) error {
 func Capture(ctx context.Context) (image.Image, error) {
 	r, w := io.Pipe()
 
+	var err2 error
 	go func() {
-		if err := DumpXWindowImage(ctx, w); err != nil {
-			log.Fatal(err)
+		if err2 = DumpXWindowImage(ctx, w); err2 != nil {
+			r.CloseWithError(io.EOF)
 		}
 		w.Close()
 	}()
 
-	return Decode(r)
+	m, err := Decode(r)
+	if err2 != nil {
+		return nil, err2
+	}
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
 }
